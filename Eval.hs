@@ -58,14 +58,22 @@ unpack x = loop x 0 (0, 0) where
 edgeTable :: UArray Int Int
 edgeTable = listArray (0, 6560) $ map (f . unpack) [0..6560] where
     f (p, o) = corner p + c p o + wing p + mount p o + stable p o
-    corner p   = ((p .&. 1) + (p >>> 7)) * 5
+    corner p   = ((p .&. 1) + (p >>> 7)) * 1
     c      p o = (  (if p .&.  2 ==  2 && (p .|. o) .&.   1 == 0 && p .&. 252 /= 252 then 1 else 0)
                   + (if p .&. 64 == 64 && (p .|. o) .&. 128 == 0 && p .&.  63 /=  63 then 1 else 0)) * (-4)
     wing   p   = ((if p .&. 127 == 62 then 1 else 0) + (if p .&. 254 == 124 then 1 else 0)) * (-4)
     mount  p o = if p == 126 && o == 0 then 8 else 0
-    stable p o = (if p .|. o == 255 then popCount (p .&. 126) else loop p o 1) * 4
-    loop _ _ 7 = 0
-    loop p o i =
-        let k = bit i; l = k - 1; m = 255 - k - l in
-        loop p o (i + 1) + (if p .&. k == k && (p .&. l == l || p .&. m == m) then 1 else 0)
+    stable p o = popCount (getStable p o p) * 4
+
+getStable :: Int -> Int -> Int -> Int
+getStable p o s = let s' = p .&. s in if s' == 0 || e == 0 then s' else iter 0 s' where
+    e = complement (p .|. o) .&. 255
+    iter 8 stable = stable
+    iter i stable | e .&. (bit i) == 0 = iter (i + 1) stable
+    iter i stable =
+        let rp = fromIntegral $ getFlipLine (fromIntegral p) (fromIntegral o) i
+            sp = getStable (xor rp p .|. (bit i)) (xor rp o) stable
+            ro = fromIntegral $ getFlipLine (fromIntegral o) (fromIntegral p) i
+            so = getStable (xor ro p) (xor ro o .|. (bit i)) sp in
+        iter (i + 1) so
 
