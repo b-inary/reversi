@@ -52,11 +52,13 @@ runParser p s =
     do { (a,[]) <- readP_to_S p s
        ; return a }
 
+parseCommand :: String -> Either String Command
 parseCommand s =
     case runParser (pCommand <* skipSpaces <* eof) s of
       [c] -> Right c
       _   -> Left  $ "Invalid Message: " ++ s
 
+pCommand :: ReadP Command
 pCommand =
     ( Open <$
        string "OPEN" <* skipSpaces <*> pNWString)
@@ -84,22 +86,25 @@ pByeList =
     many ((\a b c d -> (a,(b,c,d))) <$>
         pNWString <* skipSpaces <*> pInt <* skipSpaces <*> pInt <* skipSpaces <*> pInt <* skipSpaces)
 
+pNWString :: ReadP String
 pNWString = many1 (satisfy (not. isSpace))
 
 pInt :: ReadP Int
 pInt = readS_to_P reads
 
-
+pColor :: ReadP Color
 pColor = (black <$ string "BLACK")
          +++
          (white <$ string "WHITE")
 
+pWL :: ReadP WL
 pWL = (Win <$ string "WIN")
       +++
       (Lose <$ string "LOSE")
       +++
       (Tie <$ string "TIE")
 
+pMove :: ReadP Mv
 pMove
     = ( Pass <$ string "PASS"  )
       +++
