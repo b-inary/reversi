@@ -13,25 +13,25 @@ import Data.Array.Unboxed
 {-
     パラメータが手打ちなので、評価関数の精度はあまり良くないが...
     今のところ、評価には「隅・辺に関する得点」、「着手可能数」、「敵石に隣接する空白マス数」を用いている。
-    「隅・辺に関する得点」は、隅が10点、空白な隅に隣接している確定石でないCが-4点、Xが-5点、
-    隅でない確定石が4点、ウイングが-4点(Cの減点と合わせて-8点)、山が8点(Cの減点と合わせて0点)。
+    「隅・辺に関する得点」は、隅が550点、空白な隅に隣接している確定石でないCが-450点、Xが-300点、
+    隅でない確定石が150点、ウイングが300点(Cの減点と合わせて-150点)、山が900点(Cの減点と合わせて0点)。
+    一応 1石差 = 100点 くらいのフィーリングでいるつもり(自分有利に評価していることが多いが)。
 -}
 
 eval :: Word64 -> Word64 -> Int -> Int
 eval !p !o !turn =
-    (edgePoint p o - edgePoint o p) * 100
-  + (popCount (getMobility  p o) - popCount (getMobility  o p)) * (100 - turn)
-  + (popCount (getPMobility p o) - popCount (getPMobility o p)) * (130 - 2 * turn)
+    (edgePoint p o - edgePoint o p)
+  + (popCount (getMobility  p o) - popCount (getMobility  o p)) * 4 * turn
+  + (popCount (getPMobility p o) - popCount (getPMobility o p)) * (300 - 5 * turn)
 
 edgePoint :: Word64 -> Word64 -> Int
 edgePoint !p !o =
     let !t = p .|. o
-        !m = (-5) * popCount
-            (p .&. 0x0042000000004200
-               .&. (complement $! t .&. 0x0000000000000001) <<< 9
-               .&. (complement $! t .&. 0x0000000000000080) <<< 7
-               .&. (complement $! t .&. 0x0100000000000000) >>> 7
-               .&. (complement $! t .&. 0x8000000000000000) >>> 9)
+        !m = (popCount (p .&. 0x0042000000004200
+                          .&. (complement $! t .&. 0x0000000000000001) <<< 9
+                          .&. (complement $! t .&. 0x0000000000000080) <<< 7
+                          .&. (complement $! t .&. 0x0100000000000000) >>> 7
+                          .&. (complement $! t .&. 0x8000000000000000) >>> 9)) * (-300)
         !e1 = unsafeAt edgeTable (pack (f1 p) (f1 o))
         !e2 = unsafeAt edgeTable (pack (f2 p) (f2 o))
         !e3 = unsafeAt edgeTable (pack (f3 p) (f3 o))
@@ -62,12 +62,12 @@ unpack x = loop x 0 (0, 0) where
 edgeTable :: UArray Int Int
 edgeTable = listArray (0, 6560) $ map (f . unpack) [0..6560] where
     f (p, o) = corner p + c p o + wing p + mount p o + stable p o
-    corner p   = ((p .&. 1) + (p >>> 7)) * 1
+    corner p   = ((p .&. 1) + (p >>> 7)) * 250
     c      p o = (  (if p .&.  2 ==  2 && (p .|. o) .&.   1 == 0 && p .&. 252 /= 252 then 1 else 0)
-                  + (if p .&. 64 == 64 && (p .|. o) .&. 128 == 0 && p .&.  63 /=  63 then 1 else 0)) * (-4)
-    wing   p   = ((if p .&. 127 == 62 then 1 else 0) + (if p .&. 254 == 124 then 1 else 0)) * (-4)
-    mount  p o = if p == 126 && o == 0 then 8 else 0
-    stable p o = popCount (getStable p o p) * 4
+                  + (if p .&. 64 == 64 && (p .|. o) .&. 128 == 0 && p .&.  63 /=  63 then 1 else 0)) * (-450)
+    wing   p   = ((if p .&. 127 == 62 then 1 else 0) + (if p .&. 254 == 124 then 1 else 0)) * 300
+    mount  p o = (if p == 126 && o == 0 then 1 else 0) * 900
+    stable p o = popCount (getStable p o p) * 150
 
 getStable :: Int -> Int -> Int -> Int
 getStable p o s = let s' = p .&. s in if s' == 0 || e == 0 then s' else iter 0 s' where
