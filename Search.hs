@@ -17,7 +17,7 @@ import Data.List (sort)
 
 
 inf :: Int
-inf = 2000000
+inf = 1000064
 
 depthNormal :: Int
 depthFast   :: Int
@@ -120,7 +120,7 @@ searchLast !p !o = iter_first (moveOrderingLast p o (getMobility p o)) where
         putStrLn $ "score = " ++ (show best)
         return $ M i
     iter ((_, !m, !p', !o', !mov') : ms) !best !i =
-        if best == 1000064 then iter [] best i else do
+        if best == inf then iter [] best i else do
         let !discs = (popCount p' + popCount o')
             !t = - (alphaBetaLast o' p' mov' discs (-best - 1) (-best))
             !e = if best < t then - (alphaBetaLast o' p' mov' discs (-inf) (-t)) else t
@@ -134,14 +134,34 @@ alphaBetaLast !p !o !mov !discs !alpha !beta =
         if mov' == 0 then evalLast p o else
         - (alphaBetaLast o p mov' discs (-beta) (-alpha))
     else
-        if discs == 63 then
-            let !rev = getFlip p o mov in
-            evalLast (xor rev p .|. mov) (xor rev o)
+        if discs == 62 then
+            final_calc
         else if discs >= 59 then
             iter_simple mov (-inf)
         else
             iter_first (moveOrderingLast p o mov)
     where
+        final_calc =
+            let !m1 = mov .&. (-mov)
+                !r1 = getFlip p o m1
+                !p1 = xor r1 p .|. m1
+                !o1 = xor r1 o
+                !n1 = complement (p1 .|. o1)
+                !s1 = getFlip o1 p1 n1
+                !e1 = if s1 > 0 then evalLast (xor s1 p1) (xor s1 o1 .|. n1) else
+                      let !s1' = getFlip p1 o1 n1 in
+                      if s1' > 0 then evalLast (xor s1' p1 .|. n1) (xor s1' o1) else evalLast p1 o1
+                !m2 = xor m1 mov in
+            if e1 >= beta || m2 == 0 then e1 else
+            let !r2 = getFlip p o m2
+                !p2 = xor r2 p .|. m2
+                !o2 = xor r2 o
+                !n2 = complement (p2 .|. o2)
+                !s2 = getFlip o2 p2 n2
+                !e2 = if s2 > 0 then evalLast (xor s2 p2) (xor s2 o2 .|. n2) else
+                      let !s2' = getFlip p2 o2 n2 in
+                      if s2' > 0 then evalLast (xor s2' p2 .|. n2) (xor s2' o2) else evalLast p2 o2 in
+            max e1 e2
         iter_simple 0 !best = best
         iter_simple !mov' !best =
             let !m   = mov' .&. (-mov')
@@ -176,8 +196,8 @@ evalLast :: Word64 -> Word64 -> Int
 evalLast !p !o =
     let !pn = popCount p
         !on = popCount o in
-    if pn > on then  1000064 - 2 * on else
-    if pn < on then -1000064 + 2 * pn else 0
+    if pn > on then  inf - 2 * on else
+    if pn < on then -inf + 2 * pn else 0
 
 
 
