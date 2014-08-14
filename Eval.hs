@@ -20,23 +20,22 @@ import Data.Array.Unboxed
 
 eval :: Word64 -> Word64 -> Int -> Int
 eval !p !o !turn =
-    (edgePoint p o - edgePoint o p)
+    edgePoint p o
   + (popCount (getMobility  p o) - popCount (getMobility  o p)) * 4 * turn
   + (popCount (getPMobility p o) - popCount (getPMobility o p)) * (300 - 5 * turn)
 
 edgePoint :: Word64 -> Word64 -> Int
-edgePoint !p !o =
-    let !t = p .|. o
-        !m = (popCount (p .&. 0x0042000000004200
-                          .&. (complement $! t .&. 0x0000000000000001) <<< 9
-                          .&. (complement $! t .&. 0x0000000000000080) <<< 7
-                          .&. (complement $! t .&. 0x0100000000000000) >>> 7
-                          .&. (complement $! t .&. 0x8000000000000000) >>> 9)) * (-300)
+edgePoint !p !o = (countX p - countX o) * (-300) + e1 + e2 + e3 + e4 where
+        !t = p .|. o
+        !m = 0x0042000000004200 .&. (complement $! t .&. 0x0000000000000001) <<< 9
+                                .&. (complement $! t .&. 0x0000000000000080) <<< 7
+                                .&. (complement $! t .&. 0x0100000000000000) >>> 7
+                                .&. (complement $! t .&. 0x8000000000000000) >>> 9
         !e1 = unsafeAt edgeTable (pack (f1 p) (f1 o))
         !e2 = unsafeAt edgeTable (pack (f2 p) (f2 o))
         !e3 = unsafeAt edgeTable (pack (f3 p) (f3 o))
-        !e4 = unsafeAt edgeTable (pack (f4 p) (f4 o)) in
-    m + e1 + e2 + e3 + e4 where
+        !e4 = unsafeAt edgeTable (pack (f4 p) (f4 o))
+        countX x = popCount (x .&. m)
         f1 x = x .&. 255
         f2 x = x >>> 56
         f3 x = ((x .&. 0x0101010101010101) * 0x0102040810204080) >>> 56
@@ -61,7 +60,8 @@ unpack x = loop x 0 (0, 0) where
 
 edgeTable :: UArray Int Int
 edgeTable = listArray (0, 6560) $ map (f . unpack) [0..6560] where
-    f (p, o) = corner p + c p o + wing p + mount p o + stable p o
+    f (p, o) = g p o - g o p
+    g p o = corner p + c p o + wing p + mount p o + stable p o
     corner p   = ((p .&. 1) + (p >>> 7)) * 250
     c      p o = (  (if p .&.  2 ==  2 && (p .|. o) .&.   1 == 0 && p .&. 252 /= 252 then 1 else 0)
                   + (if p .&. 64 == 64 && (p .|. o) .&. 128 == 0 && p .&.  63 /=  63 then 1 else 0)) * (-450)
