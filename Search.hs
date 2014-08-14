@@ -43,11 +43,10 @@ search p o time =
 
 
 searchAux :: Word64 -> Word64 -> Int -> Int -> IO Mv
-searchAux !p !o !depth !turn = iter_first (moveOrdering p o (getMobility p o) turn) where
-    iter_first ((_, !m) : ms) = do
+searchAux !p !o !depth !turn = iterFirst (moveOrdering p o (getMobility p o) turn) where
+    iterFirst ((_, !m) : ms) = do
         let !rev = getFlip p o m
             !e   = - (alphaBeta (xor rev o) (xor rev p .|. m) (depth - 1) (turn + 1) (-inf) inf False)
-        putStrLn $ (show $ M (log2 m)) ++ ": " ++ (show e)
         iter ms e (log2 m)
     iter [] !best !i = do
         putStrLn $ "score = " ++ (show best)
@@ -58,7 +57,6 @@ searchAux !p !o !depth !turn = iter_first (moveOrdering p o (getMobility p o) tu
             !e   = if best < t then
                    - (alphaBeta (xor rev o) (xor rev p .|. m) (depth - 1) (turn + 1) (-inf) (-t) False)
                    else t
-        putStrLn $ (show $ M (log2 m)) ++ ": " ++ (show e)
         if e > best then iter ms e (log2 m) else iter ms best i
 
 alphaBeta :: Word64 -> Word64 -> Int -> Int -> Int -> Int -> Bool -> Int
@@ -69,18 +67,18 @@ alphaBeta !p !o !limit !turn !alpha !beta !pass =
         if pass then evalLast p o else
         - (alphaBeta o p (limit - 1) turn (-beta) (-alpha) True)
     else if limit <= 3 then
-        iter_simple mov (-inf)
+        iterSimple mov (-inf)
     else
-        iter_first (moveOrdering p o mov turn)
+        iterFirst (moveOrdering p o mov turn)
     where
-        iter_simple 0 !best = best
-        iter_simple !mov' !best =
+        iterSimple 0 !best = best
+        iterSimple !mov' !best =
             let !m   = mov' .&. (-mov')
                 !rev = getFlip p o m
                 !e   = - (alphaBeta (xor rev o) (xor rev p .|. m) (limit - 1) (turn + 1) (-beta) (- (max alpha best)) False)
                 !best' = max best e in
-            if best' >= beta then best' else iter_simple (xor m mov') best'
-        iter_first ((_, !m) : ms) =
+            if best' >= beta then best' else iterSimple (xor m mov') best'
+        iterFirst ((_, !m) : ms) =
             let !rev = getFlip p o m
                 !e   = - (alphaBeta (xor rev o) (xor rev p .|. m) (limit - 1) (turn + 1) (-beta) (-alpha) False) in
             if e >= beta then e else iter ms (max alpha e) e
@@ -111,10 +109,9 @@ moveOrdering !p !o !m !t = sort (f m []) where
 -- 20手読み切りで遅くとも20秒程度か? (学科PC上にて)
 
 searchLast :: Word64 -> Word64 -> IO Mv
-searchLast !p !o = iter_first (moveOrderingLast p o (getMobility p o)) where
-    iter_first ((_, !m, !p', !o', !mov') : ms) = do
+searchLast !p !o = iterFirst (moveOrderingLast p o (getMobility p o)) where
+    iterFirst ((_, !m, !p', !o', !mov') : ms) = do
         let !e = - (alphaBetaLast o' p' mov' (popCount p' + popCount o') (-inf) inf)
-        putStrLn $ (show $ M (log2 m)) ++ ": " ++ (show e)
         iter ms e (log2 m)
     iter [] !best !i = do
         putStrLn $ "score = " ++ (show best)
@@ -124,7 +121,6 @@ searchLast !p !o = iter_first (moveOrderingLast p o (getMobility p o)) where
         let !discs = (popCount p' + popCount o')
             !t = - (alphaBetaLast o' p' mov' discs (-best - 1) (-best))
             !e = if best < t then - (alphaBetaLast o' p' mov' discs (-inf) (-t)) else t
-        putStrLn $ (show $ M (log2 m)) ++ ": " ++ (show e)
         if e > best then iter ms e (log2 m) else iter ms best i
 
 alphaBetaLast :: Word64 -> Word64 -> Word64 -> Int -> Int -> Int -> Int
@@ -135,13 +131,13 @@ alphaBetaLast !p !o !mov !discs !alpha !beta =
         - (alphaBetaLast o p mov' discs (-beta) (-alpha))
     else
         if discs == 62 then
-            final_calc
+            finalCalc
         else if discs >= 59 then
-            iter_simple mov (-inf)
+            iterSimple mov (-inf)
         else
-            iter_first (moveOrderingLast p o mov)
+            iterFirst (moveOrderingLast p o mov)
     where
-        final_calc =
+        finalCalc =
             let !m1 = mov .&. (-mov)
                 !r1 = getFlip p o m1
                 !p1 = xor r1 p .|. m1
@@ -162,16 +158,16 @@ alphaBetaLast !p !o !mov !discs !alpha !beta =
                       let !s2' = getFlip p2 o2 n2 in
                       if s2' > 0 then evalLast (xor s2' p2 .|. n2) (xor s2' o2) else evalLast p2 o2 in
             max e1 e2
-        iter_simple 0 !best = best
-        iter_simple !mov' !best =
+        iterSimple 0 !best = best
+        iterSimple !mov' !best =
             let !m   = mov' .&. (-mov')
                 !rev = getFlip p o m
                 !p'  = xor rev p .|. m
                 !o'  = xor rev o
                 !e   = - (alphaBetaLast o' p' (getMobility o' p') (discs + 1) (-beta) (- (max alpha best)))
                 !best' = max best e in
-            if best' >= beta then best' else iter_simple (xor m mov') best'
-        iter_first ((_, _, !p', !o', !mov') : ms) =
+            if best' >= beta then best' else iterSimple (xor m mov') best'
+        iterFirst ((_, _, !p', !o', !mov') : ms) =
             let !e = - (alphaBetaLast o' p' mov' (discs + 1) (-beta) (-alpha)) in
             if e >= beta then e else iter ms (max alpha e) e
         iter [] _ !best = best
