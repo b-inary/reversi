@@ -34,6 +34,8 @@ search p o time =
        (turn >= 60 - depthExact + 2 && time >= 10000) ||
         turn >= 60 - depthExact + 4 then
         searchLast p o
+    else if turn == 0 then
+        return $ M 37
     else if time >= 10000 then
         searchAux p o depthNormal turn
     else
