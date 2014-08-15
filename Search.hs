@@ -9,6 +9,8 @@ import Command
 import Data.Bits
 import Data.Word
 import Data.List (sort)
+import Data.Array.Base (unsafeAt)
+import Data.Array.Unboxed
 
 
 -- 探索は fail-soft な NegaScout 法を基本とする
@@ -43,19 +45,17 @@ search p o time =
 
 
 searchAux :: Word64 -> Word64 -> Int -> Int -> IO Mv
-searchAux !p !o !depth !turn = iterFirst (moveOrdering p o (getMobility p o) turn) where
-    iterFirst ((_, !m) : ms) = do
-        let !rev = getFlip p o m
-            !e   = - (alphaBeta (xor rev o) (xor rev p .|. m) (depth - 1) (turn + 1) (-inf) inf False)
+searchAux !p !o !depth !turn = iterFirst (moveOrdering p o (getMobility p o) (oDepth depth) turn) where
+    iterFirst ((_, !m, !p', !o') : ms) = do
+        let !e   = - (alphaBeta o' p' (depth - 1) (turn + 1) (-inf) inf False)
         iter ms e (log2 m)
     iter [] !best !i = do
         putStrLn $ "score = " ++ (show best)
         return $ M i
-    iter ((_, !m) : ms) !best !i = do
-        let !rev = getFlip p o m
-            !t   = - (alphaBeta (xor rev o) (xor rev p .|. m) (depth - 1) (turn + 1) (-best - 1) (-best) False)
+    iter ((_, !m, !p', !o') : ms) !best !i = do
+        let !t   = - (alphaBeta o' p' (depth - 1) (turn + 1) (-best - 1) (-best) False)
             !e   = if best < t then
-                   - (alphaBeta (xor rev o) (xor rev p .|. m) (depth - 1) (turn + 1) (-inf) (-t) False)
+                   - (alphaBeta o' p' (depth - 1) (turn + 1) (-inf) (-t) False)
                    else t
         if e > best then iter ms e (log2 m) else iter ms best i
 
@@ -69,7 +69,7 @@ alphaBeta !p !o !limit !turn !alpha !beta !pass =
     else if limit <= 3 then
         iterSimple mov (-inf)
     else
-        iterFirst (moveOrdering p o mov turn)
+        iterFirst (moveOrdering p o mov (oDepth limit) turn)
     where
         iterSimple 0 !best = best
         iterSimple !mov' !best =
@@ -78,27 +78,31 @@ alphaBeta !p !o !limit !turn !alpha !beta !pass =
                 !e   = - (alphaBeta (xor rev o) (xor rev p .|. m) (limit - 1) (turn + 1) (-beta) (- (max alpha best)) False)
                 !best' = max best e in
             if best' >= beta then best' else iterSimple (xor m mov') best'
-        iterFirst ((_, !m) : ms) =
-            let !rev = getFlip p o m
-                !e   = - (alphaBeta (xor rev o) (xor rev p .|. m) (limit - 1) (turn + 1) (-beta) (-alpha) False) in
+        iterFirst ((_, _, !p', !o') : ms) =
+            let !e = - (alphaBeta o' p' (limit - 1) (turn + 1) (-beta) (-alpha) False) in
             if e >= beta then e else iter ms (max alpha e) e
         iter [] _ !best = best
-        iter ((_, !m) : ms) !a !best =
-            let !rev = getFlip p o m
-                !t   = - (alphaBeta (xor rev o) (xor rev p .|. m) (limit - 1) (turn + 1) (-a - 1) (-a) False)
-                !e   = if a < t && t < beta then
-                       - (alphaBeta (xor rev o) (xor rev p .|. m) (limit - 1) (turn + 1) (-beta) (-t) False)
-                       else t
+        iter ((_, _, !p', !o') : ms) !a !best =
+            let !t = - (alphaBeta o' p' (limit - 1) (turn + 1) (-a - 1) (-a) False)
+                !e = if a < t && t < beta then
+                     - (alphaBeta o' p' (limit - 1) (turn + 1) (-beta) (-t) False)
+                     else t
                 !best' = max best e in
             if best' >= beta then best' else iter ms (max a best') best'
 
-moveOrdering :: Word64 -> Word64 -> Word64 -> Int -> [(Int, Word64)]
-moveOrdering !p !o !m !t = sort (f m []) where
+moveOrdering :: Word64 -> Word64 -> Word64 -> Int -> Int -> [(Int, Word64, Word64, Word64)]
+moveOrdering !p !o !m !depth !t = sort (f m []) where
     f 0  !r = r
     f !x !r =
         let !n = x .&. (-x)
-            !rev = getFlip p o n in
-        f (xor x n) ((eval (xor rev o) (xor rev p .|. n) (t + 1), n) : r)
+            !rev = getFlip p o n
+            !p' = xor rev p .|. n
+            !o' = xor rev o in
+        f (xor x n) ((alphaBeta o' p' depth (t + 1) (-inf) inf False, n, p', o') : r)
+
+oDepth :: Int -> Int
+oDepth d = unsafeAt a d where
+    a = listArray (0, 12) [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 3, 3, 7] :: UArray Int Int
 
 
 
@@ -109,19 +113,37 @@ moveOrdering !p !o !m !t = sort (f m []) where
 -- 20手読み切りで遅くとも20秒程度か? (学科PC上にて)
 
 searchLast :: Word64 -> Word64 -> IO Mv
-searchLast !p !o = iterFirst (moveOrderingLast p o (getMobility p o)) where
-    iterFirst ((_, !m, !p', !o', !mov') : ms) = do
-        let !e = - (alphaBetaLast o' p' mov' (popCount p' + popCount o') (-inf) inf)
-        iter ms e (log2 m)
-    iter [] !best !i = do
-        putStrLn $ "score = " ++ (show best)
-        return $ M i
-    iter ((_, !m, !p', !o', !mov') : ms) !best !i =
-        if best == inf then iter [] best i else do
-        let !discs = (popCount p' + popCount o')
-            !t = - (alphaBetaLast o' p' mov' discs (-best - 1) (-best))
-            !e = if best < t then - (alphaBetaLast o' p' mov' discs (-inf) (-t)) else t
-        if e > best then iter ms e (log2 m) else iter ms best i
+searchLast !p !o =
+    if discs >= 51 then
+        iterFirst (moveOrderingLast p o (getMobility p o))
+    else
+        iterFirst2 (moveOrdering p o (getMobility p o) (oDepthLast discs) (discs - 4))
+    where
+        !discs = popCount p + popCount o
+        iterFirst ((_, !m, !p', !o', !mov') : ms) = do
+            let !e = - (alphaBetaLast o' p' mov' (discs + 1) (-inf) inf)
+            iter ms e (log2 m)
+        iter [] !best !i = do
+            putStrLn $ "score = " ++ (show best)
+            return $ M i
+        iter ((_, !m, !p', !o', !mov') : ms) !best !i =
+            if best == inf then iter [] best i else do
+            let !t = - (alphaBetaLast o' p' mov' (discs + 1) (-best - 1) (-best))
+                !e = if best < t then - (alphaBetaLast o' p' mov' (discs + 1) (-inf) (-t)) else t
+            if e > best then iter ms e (log2 m) else iter ms best i
+        iterFirst2 ((_, !m, !p', !o') : ms) = do
+            let !e = - (alphaBetaLast o' p' (getMobility o' p') (discs + 1) (-inf) inf)
+            iter2 ms e (log2 m)
+        iter2 [] !best !i = do
+            putStrLn $ "score = " ++ (show best)
+            return $ M i
+        iter2 ((_, !m, !p', !o') : ms) !best !i =
+            if best == inf then iter [] best i else do
+            let !mov' = getMobility o' p'
+                !t = - (alphaBetaLast o' p' mov' (discs + 1) (-best - 1) (-best))
+                !e = if best < t then - (alphaBetaLast o' p' mov' (discs + 1) (-inf) (-t)) else t
+            if e > best then iter2 ms e (log2 m) else iter2 ms best i
+
 
 alphaBetaLast :: Word64 -> Word64 -> Word64 -> Int -> Int -> Int -> Int
 alphaBetaLast !p !o !mov !discs !alpha !beta =
@@ -134,8 +156,10 @@ alphaBetaLast !p !o !mov !discs !alpha !beta =
             finalCalc
         else if discs >= 59 then
             iterSimple mov (-inf)
-        else
+        else if discs >= 51 then
             iterFirst (moveOrderingLast p o mov)
+        else
+            iterFirst2 (moveOrdering p o mov (oDepthLast discs) (discs - 4))
     where
         finalCalc =
             let !m1 = mov .&. (-mov)
@@ -176,6 +200,20 @@ alphaBetaLast !p !o !mov !discs !alpha !beta =
                 !e = if a < t && t < beta then - (alphaBetaLast o' p' mov' (discs + 1) (-beta) (-t)) else t
                 !best' = max best e in
             if best' >= beta then best' else iter ms (max a e) best'
+        iterFirst2 ((_, _, !p', !o') : ms) =
+            let !e = - (alphaBetaLast o' p' (getMobility o' p') (discs + 1) (-beta) (-alpha)) in
+            if e >= beta then e else iter2 ms (max alpha e) e
+        iter2 [] _ !best = best
+        iter2 ((_, _, !p', !o') : ms) !a !best =
+            let !mov' = getMobility o' p'
+                !t = - (alphaBetaLast o' p' mov' (discs + 1) (-a - 1) (-a))
+                !e = if a < t && t < beta then - (alphaBetaLast o' p' mov' (discs + 1) (-beta) (-t)) else t
+                !best' = max best e in
+            if best' >= beta then best' else iter2 ms (max a e) best'
+
+oDepthLast :: Int -> Int
+oDepthLast d = unsafeAt a (d - 44) where
+    a = listArray (0, 6) [7, 5, 3, 3, 1, 1, 1] :: UArray Int Int
 
 moveOrderingLast :: Word64 -> Word64 -> Word64 -> [(Int, Word64, Word64, Word64, Word64)]
 moveOrderingLast !p !o !mov = sort (f mov []) where
